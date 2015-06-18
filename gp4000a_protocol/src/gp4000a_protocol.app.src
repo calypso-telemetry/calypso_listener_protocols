@@ -1,0 +1,13 @@
+{application, gp4000a_protocol, [
+  {description, "gp4000a protocol implementation"},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+    kernel,
+    stdlib,
+    calypso_geo,
+    calypso_listener
+  ]},
+  {mod, {gp4000a_protocol_app, []}},
+  {env, []}
+]}.

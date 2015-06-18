@@ -1,0 +1,13 @@
+{application, tk102_protocol, [
+  {description, "tk102 protocol implementation"},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+    kernel,
+    stdlib,
+    calypso_listener,
+    calypso_geo
+  ]},
+  {mod, {s508_protocol_app, []}},
+  {env, []}
+]}.
