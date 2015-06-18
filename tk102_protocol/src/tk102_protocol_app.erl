@@ -1,5 +1,5 @@
 -module(tk102_protocol_app).
--author("begemot").
+-author("Sergey Loguntsov").
 
 -behaviour(application).
 

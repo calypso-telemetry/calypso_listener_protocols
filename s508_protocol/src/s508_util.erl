@@ -1,5 +1,5 @@
 -module(s508_util).
--author("begemot").
+-author("Sergey Loguntsov").
 
 %% API
 -export([

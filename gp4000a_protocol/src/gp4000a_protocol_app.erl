@@ -1,5 +1,5 @@
 -module(gp4000a_protocol_app).
--author("begemot").
+-author("Sergey Loguntsov").
 
 -behaviour(application).
 

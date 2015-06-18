@@ -1,5 +1,5 @@
 -module(s508_device).
--author("begemot").
+-author("Sergey Loguntsov").
 
 -include_lib("calypso_core/include/cl_device.hrl").
 

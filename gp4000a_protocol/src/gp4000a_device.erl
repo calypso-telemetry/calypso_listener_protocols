@@ -1,5 +1,5 @@
 -module(gp4000a_device).
--author("begemot").
+-author("Sergey Loguntsov").
 
 -include_lib("calypso_core/include/cl_device.hrl").
 

@@ -1,5 +1,5 @@
 -module(traccar_device).
--author("begemot").
+-author("Sergey Loguntsov").
 
 
 -behaviour(cl_device).

@@ -1,5 +1,5 @@
 -module(gp4000a_protocol).
--author("begemot").
+-author("Sergey Loguntsov").
 
 -behaviour(cl_protocol).
 

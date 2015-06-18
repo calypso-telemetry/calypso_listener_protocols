@@ -1,5 +1,5 @@
 -module(tk102_device).
--author("begemot").
+-author("Sergey Loguntsov").
 
 %% API
 -export([

@@ -1,5 +1,5 @@
 -module(gp4000a_util).
--author("begemot").
+-author("Sergey Loguntsov").
 
 %% API
 -export([

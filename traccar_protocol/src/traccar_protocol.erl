@@ -3,7 +3,7 @@
 %%
 
 -module(traccar_protocol).
--author("begemot").
+-author("Sergey Loguntsov").
 
 -behaviour(cl_protocol).
 -export([

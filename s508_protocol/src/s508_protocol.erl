@@ -1,5 +1,5 @@
 -module(s508_protocol).
--author("begemot").
+-author("Sergey Loguntsov").
 
 -behaviour(cl_protocol).
 
