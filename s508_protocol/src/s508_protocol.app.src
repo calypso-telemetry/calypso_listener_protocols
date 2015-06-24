@@ -5,8 +5,7 @@
   {applications, [
     kernel,
     stdlib,
-    calypso_listener,
-    calypso_geo
+    calypso_listener
   ]},
   {mod, {s508_protocol_app, []}},
   {env, []}

@@ -5,7 +5,6 @@
   {applications, [
     kernel,
     stdlib,
-    calypso_geo,
     calypso_listener
   ]},
   {mod, {gp4000a_protocol_app, []}},
