@@ -17,8 +17,13 @@
   pseudo_ip :: binary()
 }).
 
+start({ udp, Port }, Options) ->
+  cl_udp_transport:start_listener(?MODULE, Port, Options);
 start(Port, Options) ->
   cl_tcp_transport:start_listener(?MODULE, Port, Options).
+
+stop({ udp, Port}) ->
+  cl_udp_transport:stop_listener(Port);
 stop(Port) ->
   cl_tcp_transport:stop_listener(Port).
 
@@ -40,68 +45,70 @@ terminate(Reason, _State, _Protocol) ->
   ok.
 
 handle_frame_in(Binary, State, Protocol) ->
-  [ Packet, Rest ] = binary:split(Binary, <<"\n\r">>),
-  case binary:split(Packet, <<",">>, [ global ]) of
-    [ BTime, _AdminMobile, <<"GPRMC">>, _CurrentTime, <<"A">>,
-      Longtitude, LongtitudeDirection, Latitude, LatitudeDirection,
-      BSpeed, BDirection, _Date, _, _, _CRC16_0, BIsGpsValid, Status,
-      <<" imei:", BImei/binary>>, BCountOfSatelites, BHeight, <<"F:", PowerVoltage/binary>>, BIsCharging, _BodyLength, _CRC16_1,
-      _MCC, _MNC, _LAC, _CellID | Properties
-    ] ->
-
-% [<<"150507224139">>,<<"39150161">>,<<"GPRMC">>,<<"194139.000">>,<<"A">>,<<"2609.3958">>,<<"N">>,<<"05031.1647">>,<<"E">>,<<"0.00">>,<<"0.00">>,<<"070515">>,<<>>,<<>>,<<"A*66">>,<<"F">>,<<>>,<<" imei:013226003474604">>,<<"05">>,<<"21.2">>,<<"F:4.28V">>,<<"1">>,<<"133">>,<<"495">>,<<"426">>,<<"02">>,<<"0960">>,<<"2F8C">>,<<"Oil=53%">>,<<"T=100">>,<<"RFID=">>]
-%[<<"150507224139">>,<<"39150161">>,<<"GPRMC">>,<<"194139.000">>,<<"A">>,
-% <<"2609.3958">>,<<"N">>,<<"05031.1647">>,<<"E">>,
-% <<"0.00">>,<<"0.00">>,<<"070515">>,<<>>,<<>>,<<"A*66">>,<<"F">>,<<>>,<<" imei:013226003474604">>,<<"05">>,<<"21.2">>,<<"F:4.28V">>,<<"1">>,<<"133">>,<<"495">>,<<"426">>,<<"02">>,<<"0960">>,<<"2F8C">>,<<"Oil=53%">>,<<"T=100">>,<<"RFID=">>]
-        NewProtocol0 = case cl_transport:device(Protocol) of
-          undefined ->
-            case cl_transport:set_device_login(BImei, Protocol) of
-              { ok, Prot, _ } -> Prot;
-              undefined -> throw({{stop, bad_device}, State, Protocol})
-            end;
-          _ -> Protocol
-        end,
-        << BYear:2/binary, BMonth:2/binary, BDay:2/binary, BHour:2/binary, BMinutes:2/binary, BSeconds:2/binary>> = BTime,
-        Time = {
-          { 2000 + binary_to_integer(BYear), binary_to_integer(BMonth), binary_to_integer(BDay) },
-          { binary_to_integer(BHour), binary_to_integer(BMinutes), binary_to_integer(BSeconds)}
-        },
-        X = parse_coordinate(Longtitude, LongtitudeDirection),
-        Y = parse_coordinate(Latitude, LatitudeDirection),
-        Z = binary_to_float(BHeight),
-        Gps = cl_gps:new({X, Y, Z}),
-        Speed = binary_to_float(BSpeed) * 1853.184,
-        Direction = binary_to_float(BDirection),
-        IsGpsValid = BIsGpsValid =:= <<"F">>,
-        CountOfSatelites = binary_to_integer(BCountOfSatelites),
-        [ BVoltage | _ ] = binary:split(PowerVoltage, <<"V">>),
-        Voltage = binary_to_float(BVoltage),
-        IsCharging = BIsCharging =:= <<"1">>,
-        PropertyMap = maps:from_list(parse_status(Status) ++ lists:foldl(fun(Bin, Acc) ->
-          case parse_property(Bin) of
-            { Key, Value } -> [ {Key, Value } | Acc ];
-            undefined -> Acc
-          end
-        end, [], Properties)),
-        Data = maps:merge(PropertyMap, #{
-          device_time => Time,
-          gps => Gps,
-          speed => Speed,
-          direction => Direction,
-          is_gps_valid => IsGpsValid,
-          satelites => CountOfSatelites,
-          voltage => Voltage,
-          is_charging => IsCharging,
-          sos_alarm => Status =:= <<"help me">>,
-          is_battery_works => Status =:= <<"battery">>
-        }),
-        Telemetry = cl_telemetry:new(calypso_time:now(), Data),
-        NewProtocol1 = cl_transport:set_telemetry(Telemetry, NewProtocol0),
-        {{rest, Rest}, State, NewProtocol1 };
-    _ ->
-      ?ERROR("Bad packet ~p", [ Packet ]),
-      {{stop, bad_packet}, State, Protocol }
-  end.
+  lager:info("NMEA message: ~p", [ Binary ]),
+  { ok, State, Protocol }.
+%%   [ Packet, Rest ] = binary:split(Binary, <<"\n\r">>),
+%%   case binary:split(Packet, <<",">>, [ global ]) of
+%%     [ BTime, _AdminMobile, <<"GPRMC">>, _CurrentTime, <<"A">>,
+%%       Longtitude, LongtitudeDirection, Latitude, LatitudeDirection,
+%%       BSpeed, BDirection, _Date, _, _, _CRC16_0, BIsGpsValid, Status,
+%%       <<" imei:", BImei/binary>>, BCountOfSatelites, BHeight, <<"F:", PowerVoltage/binary>>, BIsCharging, _BodyLength, _CRC16_1,
+%%       _MCC, _MNC, _LAC, _CellID | Properties
+%%     ] ->
+%%
+%% % [<<"150507224139">>,<<"39150161">>,<<"GPRMC">>,<<"194139.000">>,<<"A">>,<<"2609.3958">>,<<"N">>,<<"05031.1647">>,<<"E">>,<<"0.00">>,<<"0.00">>,<<"070515">>,<<>>,<<>>,<<"A*66">>,<<"F">>,<<>>,<<" imei:013226003474604">>,<<"05">>,<<"21.2">>,<<"F:4.28V">>,<<"1">>,<<"133">>,<<"495">>,<<"426">>,<<"02">>,<<"0960">>,<<"2F8C">>,<<"Oil=53%">>,<<"T=100">>,<<"RFID=">>]
+%% %[<<"150507224139">>,<<"39150161">>,<<"GPRMC">>,<<"194139.000">>,<<"A">>,
+%% % <<"2609.3958">>,<<"N">>,<<"05031.1647">>,<<"E">>,
+%% % <<"0.00">>,<<"0.00">>,<<"070515">>,<<>>,<<>>,<<"A*66">>,<<"F">>,<<>>,<<" imei:013226003474604">>,<<"05">>,<<"21.2">>,<<"F:4.28V">>,<<"1">>,<<"133">>,<<"495">>,<<"426">>,<<"02">>,<<"0960">>,<<"2F8C">>,<<"Oil=53%">>,<<"T=100">>,<<"RFID=">>]
+%%         NewProtocol0 = case cl_transport:device(Protocol) of
+%%           undefined ->
+%%             case cl_transport:set_device_login(BImei, Protocol) of
+%%               { ok, Prot, _ } -> Prot;
+%%               undefined -> throw({{stop, bad_device}, State, Protocol})
+%%             end;
+%%           _ -> Protocol
+%%         end,
+%%         << BYear:2/binary, BMonth:2/binary, BDay:2/binary, BHour:2/binary, BMinutes:2/binary, BSeconds:2/binary>> = BTime,
+%%         Time = {
+%%           { 2000 + binary_to_integer(BYear), binary_to_integer(BMonth), binary_to_integer(BDay) },
+%%           { binary_to_integer(BHour), binary_to_integer(BMinutes), binary_to_integer(BSeconds)}
+%%         },
+%%         X = parse_coordinate(Longtitude, LongtitudeDirection),
+%%         Y = parse_coordinate(Latitude, LatitudeDirection),
+%%         Z = binary_to_float(BHeight),
+%%         Gps = cl_gps:new({X, Y, Z}),
+%%         Speed = binary_to_float(BSpeed) * 1853.184,
+%%         Direction = binary_to_float(BDirection),
+%%         IsGpsValid = BIsGpsValid =:= <<"F">>,
+%%         CountOfSatelites = binary_to_integer(BCountOfSatelites),
+%%         [ BVoltage | _ ] = binary:split(PowerVoltage, <<"V">>),
+%%         Voltage = binary_to_float(BVoltage),
+%%         IsCharging = BIsCharging =:= <<"1">>,
+%%         PropertyMap = maps:from_list(parse_status(Status) ++ lists:foldl(fun(Bin, Acc) ->
+%%           case parse_property(Bin) of
+%%             { Key, Value } -> [ {Key, Value } | Acc ];
+%%             undefined -> Acc
+%%           end
+%%         end, [], Properties)),
+%%         Data = maps:merge(PropertyMap, #{
+%%           device_time => Time,
+%%           gps => Gps,
+%%           speed => Speed,
+%%           direction => Direction,
+%%           is_gps_valid => IsGpsValid,
+%%           satelites => CountOfSatelites,
+%%           voltage => Voltage,
+%%           is_charging => IsCharging,
+%%           sos_alarm => Status =:= <<"help me">>,
+%%           is_battery_works => Status =:= <<"battery">>
+%%         }),
+%%         Telemetry = cl_telemetry:new(calypso_time:now(), Data),
+%%         NewProtocol1 = cl_transport:set_telemetry(Telemetry, NewProtocol0),
+%%         {{rest, Rest}, State, NewProtocol1 };
+%%     _ ->
+%%       ?ERROR("Bad packet ~p", [ Packet ]),
+%%       {{stop, bad_packet}, State, Protocol }
+%%   end.
 
 parse_status(<<"ACCStart">>) ->
   [ {is_ignition_on, true} ];
