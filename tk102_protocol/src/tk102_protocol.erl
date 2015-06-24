@@ -9,7 +9,8 @@
 -export([
   start/2, stop/1,
   init/2, terminate/3,
-  handle_frame_in/3, handle_frame_out/3, handle_info/3
+  handle_frame_in/3, handle_frame_out/3, handle_info/3,
+  get_device_login/1
 ]).
 
 -record(state, {
@@ -21,6 +22,15 @@ start(Port, Options) ->
 stop(Port) ->
   cl_tcp_transport:stop_listener(Port).
 
+get_device_login(Packet) ->
+  case binary:split(Packet, <<",">>, [ global ]) of
+      [ _BTime, _AdminMobile, <<"GPRMC">>, _CurrentTime, <<"A">>,
+        _Longtitude, _LongtitudeDirection, _Latitude, _LatitudeDirection,
+        _BSpeed, _BDirection, _Date, _, _, _CRC16_0, _BIsGpsValid, _Status,
+        <<" imei:", BImei/binary>> | _ ] ->
+        { ok, BImei };
+      _ -> undefined
+  end.
 
 init(_Options, Protocol) ->
   ?INFO("Connected ~p", [ ?MODULE ]),
@@ -43,9 +53,9 @@ handle_frame_in(Binary, State, Protocol) ->
 %[<<"150507224139">>,<<"39150161">>,<<"GPRMC">>,<<"194139.000">>,<<"A">>,
 % <<"2609.3958">>,<<"N">>,<<"05031.1647">>,<<"E">>,
 % <<"0.00">>,<<"0.00">>,<<"070515">>,<<>>,<<>>,<<"A*66">>,<<"F">>,<<>>,<<" imei:013226003474604">>,<<"05">>,<<"21.2">>,<<"F:4.28V">>,<<"1">>,<<"133">>,<<"495">>,<<"426">>,<<"02">>,<<"0960">>,<<"2F8C">>,<<"Oil=53%">>,<<"T=100">>,<<"RFID=">>]
-        NewProtocol0 = case cl_tcp:device(Protocol) of
+        NewProtocol0 = case cl_transport:device(Protocol) of
           undefined ->
-            case cl_tcp:set_device_login(BImei, Protocol) of
+            case cl_transport:set_device_login(BImei, Protocol) of
               { ok, Prot, _ } -> Prot;
               undefined -> throw({{stop, bad_device}, State, Protocol})
             end;
@@ -86,7 +96,7 @@ handle_frame_in(Binary, State, Protocol) ->
           is_battery_works => Status =:= <<"battery">>
         }),
         Telemetry = cl_telemetry:new(calypso_time:now(), Data),
-        NewProtocol1 = cl_tcp:set_telemetry(Telemetry, NewProtocol0),
+        NewProtocol1 = cl_transport:set_telemetry(Telemetry, NewProtocol0),
         {{rest, Rest}, State, NewProtocol1 };
     _ ->
       ?ERROR("Bad packet ~p", [ Packet ]),

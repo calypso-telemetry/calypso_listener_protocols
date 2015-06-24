@@ -9,7 +9,8 @@
 -export([
   start/2, stop/1,
   init/2, terminate/3,
-  handle_frame_in/3, handle_frame_out/3, handle_info/3
+  handle_frame_in/3, handle_frame_out/3, handle_info/3,
+  get_device_login/1
 ]).
 
 -record(state, {
@@ -21,13 +22,16 @@ start(Port, Options) ->
 stop(Port) ->
   cl_tcp_transport:stop_listener(Port).
 
-
 init(_Options, Protocol) ->
   ?INFO("Connected", []),
   { ok, #state{}, Protocol }.
 terminate(Reason, _State, _Protocol) ->
   lager:info("Disconnected ~p", [ Reason ]),
   ok.
+
+get_device_login(<<16#24, 16#24, _:3/binary, PseudoIp:4/binary, _/binary>>) ->
+  { ok, PseudoIp };
+get_device_login(_) -> undefined.
 
 handle_frame_in(<<16#24, 16#24, Operation:8/unsigned-integer, Length0:16/unsigned-integer, Packet:Length0/binary, Rest/binary>> = Packet0, State, Protocol) when size(Packet0) < 500 ->
   Length = Length0 - 6,
@@ -37,11 +41,11 @@ handle_frame_in(<<16#24, 16#24, Operation:8/unsigned-integer, Length0:16/unsigne
       { NewState0, NewProtocol0 } = case { State#state.pseudo_ip, PseudoIp} of
         { undefined, _ } ->
           ?INFO("Login as ~p, operation ~p, body ~p", [ s508_util:bin_to_hex(PseudoIp), Operation, Body ]),
-          case cl_tcp:set_device_login(s508_util:bin_to_hex(PseudoIp), Protocol) of
+          case cl_transport:set_device_login(s508_util:bin_to_hex(PseudoIp), Protocol) of
             { ok, NewProtocol, Device } ->
               register(PseudoIp),
               Imei = cl_device:info(imei, Device),
-              cl_tcp:register({ imei, Imei}),
+              cl_transport:register({ imei, Imei}, Protocol),
               NState = State#state{
                 pseudo_ip = PseudoIp
               },
@@ -54,7 +58,7 @@ handle_frame_in(<<16#24, 16#24, Operation:8/unsigned-integer, Length0:16/unsigne
         PIP ->
           error(bad_pseudo_ip, [ PIP, PseudoIp ])
       end,
-      NewProtocol1 = cl_tcp:set_rest(Rest, NewProtocol0),
+      NewProtocol1 = cl_transport:set_rest(Rest, NewProtocol0),
       operation(Operation, Body, NewState0, NewProtocol1);
     _ ->
       handle_frame_in(Rest, State, Protocol)
@@ -90,7 +94,7 @@ handle_frame_out({set_timezone, #{ hours := Hours, minutes := Minutes } = Param}
     false ->
       <<(abs(Hours) bor 128):8/unsigned-integer, M:8/unsigned-integer>>
   end,
-  NewProtocol0 = cl_tcp:change_device(fun(Device) ->
+  NewProtocol0 = cl_transport:change_device(fun(Device) ->
     Info = #{ timezone => Param },
     cl_device:info_merge(Info, Device)
   end, Protocol),
@@ -105,7 +109,7 @@ handle_frame_out({ set_timing_interval, Timing1, Timing2, undefined }, State, Pr
   {{reply, ok}, State, NewProtocol };
 
 handle_frame_out({ set_timing_interval, Timing1, Timing2, Timing3 }, State, Protocol) ->
-  NewProtocol0 = cl_tcp:change_device(fun(Device) ->
+  NewProtocol0 = cl_transport:change_device(fun(Device) ->
     Info = #{
       timing_interval_on => Timing1,
       timing_interval_off => Timing2,
@@ -116,7 +120,7 @@ handle_frame_out({ set_timing_interval, Timing1, Timing2, Timing3 }, State, Prot
   {{reply, ok}, State, NewProtocol1 };
 
 handle_frame_out({ set_distance_interval, Distance }, State, Protocol) ->
-  NewProtocol0 = cl_tcp:change_device(fun(Device) ->
+  NewProtocol0 = cl_transport:change_device(fun(Device) ->
     Info = #{ fixed_distance_interval => Distance },
     cl_device:info_merge(Info, Device)
   end, Protocol),
@@ -138,7 +142,7 @@ operation(16#21, <<>>, State, Protocol) ->
 operation(16#80, PositionData, State, Protocol ) ->
   case parse_position_data(PositionData) of
     { ok, Telemetry } ->
-      NewProtocol = cl_tcp:set_telemetry(Telemetry, Protocol),
+      NewProtocol = cl_transport:set_telemetry(Telemetry, Protocol),
       {ok, State, NewProtocol };
     undefined -> { ok, State, Protocol }
   end;
@@ -146,7 +150,7 @@ operation(16#80, PositionData, State, Protocol ) ->
 operation(16#8E, PositionData, State, Protocol) ->
   case parse_position_data(PositionData) of
     { ok, Telemetry } ->
-      NewProtocol = cl_tcp:set_telemetry(Telemetry, Protocol),
+      NewProtocol = cl_transport:set_telemetry(Telemetry, Protocol),
       {ok, State, NewProtocol };
     undefined -> { ok, State, Protocol }
   end;
@@ -201,7 +205,6 @@ parse_position_data(<<BTimestamp:6/binary, BLatitude:4/binary, BLongitude:4/bina
 parse_position_data(_) ->
   undefined.
 
-
 decode_geo(Binary) when size(Binary) =:= 4 ->
   Value = s508_bcd:decode({signed, Binary }),
   Degree = Value div 100000,
@@ -226,4 +229,4 @@ send_packet(Type, Body, State, Protocol) when is_integer(Type), is_binary(Body) 
   Start = <<16#24, 16#24, Type:8/unsigned-integer, Length:16/unsigned-integer, (State#state.pseudo_ip):4/binary, Body/binary>>,
   Calibration = calibration(Start, 0),
   Packet = <<Start/binary, Calibration:8/unsigned-integer, 16#0D>>,
-  cl_tcp:send(Protocol, Packet).
+  cl_transport:send(Protocol, Packet).

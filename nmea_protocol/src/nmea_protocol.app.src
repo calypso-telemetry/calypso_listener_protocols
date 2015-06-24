@@ -1,11 +1,14 @@
-% -*- mode: Erlang;-*-
-{application, traccar_protocol, [
-  { mod, { traccar_protocol_app, [] }},
-  {description, "Traccar protocol implementation for Calypso Listener"},
+{application, nmea_protocol, [
+  {description, "NMEA protocol implementation"},
   {vsn, "1"},
   {registered, []},
-  {modules, [ traccar_protocol ]},
-  {applications, [ kernel, stdlib, calypso_listener, calypso_geo ]},
+  {applications, [
+    kernel,
+    stdlib,
+    calypso_listener
+  ]},
+  {mod, {nmea_protocol_app, []}},
   {env, []}
 ]}.
+
 

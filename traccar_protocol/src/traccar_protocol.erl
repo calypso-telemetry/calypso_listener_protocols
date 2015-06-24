@@ -1,5 +1,5 @@
 %%
-%% Sample protocol for Trackcar Android client ( https://github.com/tananaev/traccar-client-android )
+%% Sample protocol for Traccar Android client ( https://github.com/tananaev/traccar-client-android )
 %%
 
 -module(traccar_protocol).
@@ -9,7 +9,8 @@
 -export([
   start/2, stop/1,
   init/2, terminate/3,
-  handle_frame_in/3, handle_frame_out/3, handle_info/3
+  handle_frame_in/3, handle_frame_out/3, handle_info/3,
+  get_device_login/1
 ]).
 
 -include_lib("calypso_listener/include/logger.hrl").
@@ -28,18 +29,20 @@ terminate(Reason, _State, _Protocol) ->
   ?INFO("Disconnected ~p ~p", [ ?MODULE, Reason ]),
   ok.
 
+get_device_login(_) -> undefined.
+
 handle_frame_in(Data, State, Protocol) when size(Data) > 300 ->
   {{stop, bad_packet}, State, Protocol };
 handle_frame_in(<<>>, State, Protocol) ->
-  NewProtocol = cl_tcp:set_rest(<<>>, Protocol),
+  NewProtocol = cl_transport:set_rest(<<>>, Protocol),
   { ok, State, NewProtocol };
 handle_frame_in(<<"$PGID,", B0/binary>> = B, State, Protocol) ->
   lager:info("Connect ~p", [ B ]),
   case binary:split(B0, <<"*">>) of
     [ Uid, Msg ] ->
       lager:info("UID ~p", [ Uid ]),
-      NewProtocol0 = cl_tcp:set_rest(Msg, Protocol),
-      case cl_tcp:set_device_login(Uid, NewProtocol0) of
+      NewProtocol0 = cl_transport:set_rest(Msg, Protocol),
+      case cl_transport:set_device_login(Uid, NewProtocol0) of
         { ok, NewProtocol1, _ } ->
           { ok, State, NewProtocol1 };
         undefined -> throw({{stop, bad_device}, State, Protocol})
@@ -55,14 +58,14 @@ handle_frame_in(<<"$TRCCR,", Bin/binary>> = B, State, Protocol) ->
       [ _TimeBin , <<"A">>, YBin, XBin, SpeedBin, CourseBin, _ZBin, BatteryBin, _ ] = binary:split(Msg, <<",">>, [ global ]),
       %%<< YearBin:4/bytes, MonthBin:2/bytes, DayBin:2/bytes, HourBin:2/bytes, MinuteBin:2/bytes, SecondsBin:2/bytes, _/binary >> = TimeBin,
       Telemetry = cl_telemetry:new(calypso_time:now(), #{
-        time => erlang:localtime(),
+        device_time => erlang:localtime(),
         gps => cl_gps:new({binary_to_float(XBin), binary_to_float(YBin)}),
         speed => binary_to_float(SpeedBin),
         direction => binary_to_float(CourseBin),
         battery_internal => binary_to_integer(BatteryBin)
       }),
       lager:info("Telemetry ~p", [ Telemetry ]),
-      NewProtocol = cl_tcp:set_telemetry(Telemetry, Protocol),
+      NewProtocol = cl_transport:set_telemetry(Telemetry, Protocol),
       handle_frame_in(Rest, State, NewProtocol);
     [ Msg ] ->
       lager:info("Frame_in ~p", [ B ]),

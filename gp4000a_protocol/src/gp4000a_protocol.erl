@@ -9,7 +9,8 @@
 -export([
   start/2, stop/1,
   init/2, terminate/3,
-  handle_frame_in/3, handle_frame_out/3, handle_info/3
+  handle_frame_in/3, handle_frame_out/3, handle_info/3,
+  get_device_login/1
 ]).
 
 -record(state, {
@@ -31,17 +32,21 @@ terminate(Reason, _State, _Protocol) ->
   lager:info("Disconnected ~p", [ Reason ]),
   ok.
 
+get_device_login(<<16#24, TrackerId:5/binary, _/binary>>) ->
+  { ok, TrackerId };
+get_device_login(_) -> undefined.
+
 handle_frame_in(<<16#24, TrackerId:5/binary, ProtocolVersion:4/big-unsigned-integer, DataType:4/big-unsigned-integer,
   Length:16/big-unsigned-integer, Body:Length/binary, _SN:1/binary, Rest/binary>> = Packet, State, Protocol) ->
   lager:info("GPS Data ~p", [ Packet ]),
   { NewState0, NewProtocol0 } = case State#state.tracker_id of
       undefined ->
           Tid = gp4000a_util:bin_to_hex(TrackerId),
-          case cl_tcp:set_device_login(Tid, Protocol) of
+          case cl_transport:set_device_login(Tid, Protocol) of
             { ok, NewProtocol, Device } ->
               register(Tid),
               Imei = cl_device:info(imei, Device),
-              cl_tcp:register({ imei, Imei}),
+              cl_transport:register({ imei, Imei}, Protocol),
               NState = State#state{
                 tracker_id = TrackerId
               },
@@ -53,14 +58,14 @@ handle_frame_in(<<16#24, TrackerId:5/binary, ProtocolVersion:4/big-unsigned-inte
         { State, Protocol };
       _ -> throw({{ stop, bad_packet}, State, Protocol })
     end,
-    NewProtocol2 = cl_tcp:set_rest(Rest, NewProtocol0),
+    NewProtocol2 = cl_transport:set_rest(Rest, NewProtocol0),
     parse_body(ProtocolVersion, DataType, Body, NewState0, NewProtocol2);
 
 handle_frame_in(<<$(, R/binary>> = Body, State, Protocol) ->
   lager:info("Command Data ~p", [ Body ]),
   case parse_command(Body) of
     { ok, Command, Params, Rest } ->
-      NewProtocol = cl_tcp:set_rest(Rest, Protocol),
+      NewProtocol = cl_transport:set_rest(Rest, Protocol),
       [ _TrackerId, <<"2">>, _CommandType, CommandSN | _Other ] = Params,
       NewState = case lists:keysearch(CommandSN, 1, State#state.commands) of
         { value, { _, Cmd, _, _}} ->
@@ -105,7 +110,7 @@ run_command(Command, State, Protocol) ->
       NewState = State#state{
         commands = [ { CommandSN, Command, Params, undefined } | State#state.commands]
       },
-      NewProtocol = cl_tcp:send(Command, Protocol),
+      NewProtocol = cl_transport:send(Command, Protocol),
       { ok, NewState, NewProtocol };
     { unrecognize, Command } ->
       { unrecognize, Command, State, Protocol }
@@ -130,12 +135,12 @@ parse_command(<<C:1/binary, Rest/binary>>, Command) ->
 
 parse_body(2, 1, <<Body:27/binary>>, State, Protocol) ->
   { ok, Telemetry } = parse_binary_body(Body),
-  NewProtocol = cl_tcp:set_telemetry(Telemetry, Protocol),
+  NewProtocol = cl_transport:set_telemetry(Telemetry, Protocol),
   { ok, State, NewProtocol };
 
 parse_body(2, 2, <<Body:27/binary>>, State, Protocol) ->
   { ok, Telemetry } = parse_binary_body(Body),
-  NewProtocol = cl_tcp:set_telemetry(Telemetry, Protocol),
+  NewProtocol = cl_transport:set_telemetry(Telemetry, Protocol),
   { ok, State, NewProtocol };
 
 parse_body(2, 3, Body, State, Protocol) ->
@@ -148,7 +153,7 @@ parse_body(2, 4, Body, State, Protocol) ->
 
 parse_body_list(<<Body:27/binary, Rest/binary>>, Protocol) ->
   { ok, Telemetry } = parse_binary_body(Body),
-  NewProtocol = cl_tcp:set_telemetry(Telemetry, Protocol),
+  NewProtocol = cl_transport:set_telemetry(Telemetry, Protocol),
   parse_body_list(Rest, NewProtocol);
 
 parse_body_list(<<>>, Protocol) ->
